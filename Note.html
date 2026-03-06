@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spreadsheet notes · offline + online</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+        }
+        body {
+            background: #f5f7fb;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .spreadsheet-card {
+            max-width: 100%;
+            width: 960px;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px -10px rgba(0,20,30,0.2);
+            padding: 24px 20px 32px 20px;
+            transition: all 0.2s;
+        }
+        h1 {
+            font-size: 1.7rem;
+            font-weight: 500;
+            margin: 0 0 6px 0;
+            color: #1e2b3c;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        h1 span {
+            background: #e8ecf3;
+            font-size: 0.9rem;
+            font-weight: 400;
+            padding: 4px 12px;
+            border-radius: 40px;
+            color: #2c3e50;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0 16px 0;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            background: white;
+            border: 1px solid #ccd7e6;
+            border-radius: 40px;
+            padding: 8px 18px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #1e2b3c;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: 0.15s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        button:hover {
+            background: #f0f4fe;
+            border-color: #7c9bcf;
+            box-shadow: 0 6px 12px rgba(35, 75, 125, 0.1);
+        }
+        button.primary {
+            background: #1e2b3c;
+            border-color: #1e2b3c;
+            color: white;
+        }
+        button.primary:hover {
+            background: #2b3c54;
+            border-color: #2b3c54;
+        }
+        .status-badge {
+            background: #e6f0f5;
+            border-radius: 40px;
+            padding: 6px 18px;
+            font-size: 0.85rem;
+            color: #1f4977;
+            border-left: 3px solid #4f7eb3;
+        }
+        .table-wrapper {
+            border: 1px solid #dae2ed;
+            border-radius: 16px;
+            overflow: auto;
+            background: white;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.02);
+            max-height: 70vh;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 600px;
+            table-layout: fixed;
+        }
+        th {
+            background: #f8fafd;
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #30557a;
+            padding: 14px 8px;
+            border-bottom: 2px solid #cbd6e6;
+            border-right: 1px solid #d8e1ed;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            background: #f2f6fc;
+            z-index: 10;
+            box-shadow: 0 1px 0 #d0ddee;
+        }
+        th:last-child {
+            border-right: none;
+        }
+        td {
+            border: 1px solid #e0e8f2;
+            padding: 0;
+            background: white;
+        }
+        td:hover {
+            background: #f9fcff;
+        }
+        .cell-input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            padding: 14px 10px;
+            font-size: 0.95rem;
+            background: transparent;
+            resize: none;
+            outline: none;
+            font-family: 'Courier New', 'SF Mono', monospace;
+            line-height: 1.5;
+            color: #152b42;
+            transition: background 0.1s;
+            border-radius: 0;
+            overflow: hidden;
+            word-break: break-word;
+        }
+        .cell-input:focus {
+            background: #fffef0;
+            box-shadow: inset 0 0 0 2px #7fa7da;
+            border-radius: 4px;
+        }
+        /* biar kayak spreadsheet beneran */
+        tr:first-child td {
+            border-top: 1px solid #c0d0e5;
+        }
+        .footer-notes {
+            margin-top: 22px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            color: #4a617c;
+            font-size: 0.85rem;
+        }
+        .footer-notes small {
+            background: #ecf2f9;
+            padding: 5px 14px;
+            border-radius: 50px;
+        }
+        .delete-btn {
+            background: none;
+            border: none;
+            box-shadow: none;
+            padding: 4px 10px;
+            color: #a5b9d4;
+        }
+        .delete-btn:hover {
+            background: #fee9e9;
+            color: #c23b3b;
+            border-color: #f3cdcd;
+        }
+        .icon {
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+    </style>
+</head>
+<body>
+<div class="spreadsheet-card">
+    <h1>
+        📒 SheetNote
+        <span>auto-save · localStorage</span>
+    </h1>
+
+    <div class="toolbar">
+        <div class="btn-group">
+            <button id="addRowBtn" class="primary">
+                <span class="icon">➕</span> Tambah baris
+            </button>
+            <button id="addColBtn">
+                <span class="icon">📎</span> Tambah kolom
+            </button>
+            <button id="resetDefaultBtn">
+                <span class="icon">🔄</span> Reset default
+            </button>
+        </div>
+        <div class="status-badge" id="saveStatus">💾 tersimpan otomatis</div>
+    </div>
+
+    <!-- area spreadsheet -->
+    <div class="table-wrapper" id="tableWrapper">
+        <table id="sheetTable">
+            <thead id="tableHeader">
+                <!-- header akan di-render lewat js biar dinamis -->
+            </thead>
+            <tbody id="tableBody">
+                <!-- isi akan di-render dari data / localStorage -->
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer-notes">
+        <small>⏎ setiap perubahan langsung simpan</small>
+        <small>📅 online / offline — tersimpan di browsermu</small>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // --- kunci localStorage
+        const STORAGE_KEY = 'spreadsheet_notes_data';
+
+        // --- data default: 4 baris, 5 kolom (A..E) dengan sel kosong
+        const DEFAULT_ROWS = 4;
+        const DEFAULT_COLS = 5;
+
+        // inisialisasi data (array 2D)
+        let sheetData = [];
+
+        // referensi elemen
+        const tableBody = document.getElementById('tableBody');
+        const tableHeader = document.getElementById('tableHeader');
+        const addRowBtn = document.getElementById('addRowBtn');
+        const addColBtn = document.getElementById('addColBtn');
+        const resetBtn = document.getElementById('resetDefaultBtn');
+        const saveStatus = document.getElementById('saveStatus');
+
+        // ---------- helper: simpan seluruh data ke localStorage ----------
+        function saveToLocalStorage() {
+            try {
+                // baca data terbaru dari tabel (sinkronisasi kalau ada perubahan manual via contenteditable)
+                captureDataFromTable();
+                // simpan sheetData
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                // feedback status
+                saveStatus.innerText = '💾 tersimpan ' + new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+                saveStatus.style.opacity = '1';
+                setTimeout(() => {
+                    saveStatus.style.transition = 'opacity 0.5s';
+                }, 800);
+            } catch (e) {
+                console.warn('gagal simpan', e);
+                saveStatus.innerText = '⚠️ gagal menyimpan';
+            }
+        }
+
+        // ---------- baca semua nilai dari tabel ke sheetData (sinkronisasi) ----------
+        function captureDataFromTable() {
+            const rows = tableBody.querySelectorAll('tr');
+            const newData = [];
+            for (let r of rows) {
+                const cells = r.querySelectorAll('td');
+                const rowData = [];
+                for (let c of cells) {
+                    const input = c.querySelector('.cell-input');
+                    if (input) {
+                        rowData.push(input.innerText); // menggunakan innerText karena contenteditable di div
+                    } else {
+                        rowData.push(''); // fallback
+                    }
+                }
+                newData.push(rowData);
+            }
+            // update sheetData
+            if (newData.length > 0) {
+                sheetData = newData;
+            } else {
+                // kalau kosong sama sekali (misal dihapus semua), biarkan default minimal
+                if (sheetData.length === 0) setDefaultData();
+            }
+        }
+
+        // ---------- render ulang header dan body berdasarkan sheetData ----------
+        function renderFullTable() {
+            // pastikan sheetData tidak kosong / minimal berbentuk array
+            if (!sheetData || sheetData.length === 0) {
+                setDefaultData();
+            }
+
+            // render header (A, B, C, ...)
+            const numCols = sheetData[0].length;
+            let headerHtml = '<tr>';
+            for (let i = 0; i < numCols; i++) {
+                const letter = String.fromCharCode(65 + i); // A, B, C, ...
+                headerHtml += `<th>${letter}</th>`;
+            }
+            headerHtml += '</tr>';
+            tableHeader.innerHTML = headerHtml;
+
+            // render body
+            let bodyHtml = '';
+            for (let r = 0; r < sheetData.length; r++) {
+                bodyHtml += '<tr>';
+                for (let c = 0; c < sheetData[r].length; c++) {
+                    const cellValue = sheetData[r][c] !== undefined ? sheetData[r][c] : '';
+                    // pakai div contenteditable biar nyaman dan tidak pakai input (bisa multiple line sederhana)
+                    bodyHtml += `<td><div class="cell-input" contenteditable="true">${cellValue}</div></td>`;
+                }
+                bodyHtml += '</tr>';
+            }
+            tableBody.innerHTML = bodyHtml;
+        }
+
+        // ---------- set data default (4x5) ----------
+        function setDefaultData() {
+            const defaultData = [];
+            for (let i = 0; i < DEFAULT_ROWS; i++) {
+                const row = Array(DEFAULT_COLS).fill('');
+                defaultData.push(row);
+            }
+            sheetData = defaultData;
+        }
+
+        // ---------- muat dari localStorage atau pakai default ----------
+        function loadFromStorage() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
+                        sheetData = parsed;
+                    } else {
+                        setDefaultData();
+                    }
+                } catch (e) {
+                    setDefaultData();
+                }
+            } else {
+                setDefaultData();
+            }
+            // render
+            renderFullTable();
+        }
+
+        // ---------- tambah baris baru (diisi kosong) ----------
+        function addRow() {
+            captureDataFromTable(); // ambil data terbaru dari tabel
+            if (sheetData.length === 0) {
+                setDefaultData();
+            } else {
+                // pastikan jumlah kolom sesuai kolom pertama
+                const colCount = sheetData[0].length;
+                const newRow = Array(colCount).fill('');
+                sheetData.push(newRow);
+            }
+            renderFullTable();
+            saveToLocalStorage(); // langsung simpan
+        }
+
+        // ---------- tambah kolom baru (setiap baris ditambah satu sel kosong di akhir) ----------
+        function addColumn() {
+            captureDataFromTable();
+            if (sheetData.length === 0) {
+                setDefaultData();
+            } else {
+                for (let r = 0; r < sheetData.length; r++) {
+                    sheetData[r].push(''); // tambah kolom baru di akhir
+                }
+            }
+            renderFullTable();
+            saveToLocalStorage();
+        }
+
+        // ---------- reset ke default 4x5 ----------
+        function resetDefault() {
+            setDefaultData();
+            renderFullTable();
+            saveToLocalStorage();
+        }
+
+        // ---------- setup event listeners: delegation untuk contenteditable + menyimpan otomatis ----------
+        function attachEvents() {
+            // delegasi input di dalam tableBody (contenteditable)
+            tableBody.addEventListener('input', function(e) {
+                const target = e.target;
+                if (target.classList.contains('cell-input')) {
+                    // saat user mengetik, kita bisa langsung simpan.
+                    // tapi kita tidak perlu capture baris per baris, pakai saveToLocalStorage yang akan capture semua.
+                    // untuk menghindari terlalu banyak simpan, bisa di-debounce, tapi ini sederhana langsung simpan.
+                    saveToLocalStorage();
+                }
+            });
+
+            // blur juga bisa jadi cadangan, tapi input sudah cukup.
+            // tambahan: untuk paste atau drop, tetap tersimpan via input.
+
+            // tombol
+            addRowBtn.addEventListener('click', addRow);
+            addColBtn.addEventListener('click', addColumn);
+            resetBtn.addEventListener('click', resetDefault);
+
+            // opsional: hapus baris? biar simpel tidak, tapi bisa pakai klik kanan? tidak dulu.
+            // tambahan: supaya lebih aman, handle sebelum unload (jika ada perubahan terakhir)
+            window.addEventListener('beforeunload', function() {
+                captureDataFromTable();
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+            });
+        }
+
+        // ---------- inisialisasi ----------
+        function init() {
+            loadFromStorage();
+            attachEvents();
+            // simpan status awal
+            saveStatus.innerText = '💾 siap · tersimpan';
+        }
+
+        init();
+
+        // tambahan: biar user bisa hapus isi dengan mudah (del) tapi sudah support.
+        // fitur ekstra: tombol hapus kolom terakhir (sederhana) sembunyikan dulu.
+        // untuk menghindari kebingungan, tidak kami tambahkan hapus kolom/baris agar fokus ke simple spreadsheet.
+        // tapi jika ingin menghapus, user bisa mengosongkan manual. atau refresh default.
+        // namun kita tambahkan sedikit trik: hapus baris terakhir dengan double klik di baris? tidak.
+        // kita beri sedikit fleksibilitas: klik tombol reset sudah cukup.
+
+        // TAPI karena kita tidak punya hapus kolom/baris, mungkin user ingin. tapi kita bisa tambah satu tombol "hapus baris terakhir" sederhana
+        // agar lebih ramah, kita tambahkan secara halus (opsional) tanpa merusak tampilan.
+        // kita tambahkan satu tombol kecil di kelompok tombol (saya akan modif sedikit di bawah)
+        // karena tadi tidak ada di HTML, saya akan tambahkan secara dinamis? lebih baik tambahkan saja via JS?
+        // biar simple: kita tambahkan tombol hapus baris terakhir secara manual di sini dengan insert sebelum reset?
+        // saya akan tambahkan satu tombol di grup setelah "Tambah kolom"
+        // supaya tidak bingung, saya modif HTML sedikit secara virtual? tapi karena ini sudah include, kita bisa menambahkannya dengan JS saat halaman siap.
+        // lebih baik: kita tambahkan tombol di HTML via inner atau create? tapi agar sesuai permintaan awal "cuman bentuk spreadsheet" tanpa terlalu banyak elemen, kita bisa skip.
+        // Saya tambahkan satu tombol "Hapus baris terakhir" dengan gaya sekunder agar lebih fungsional.
+        const btnGroup = document.querySelector('.btn-group');
+        if (btnGroup) {
+            const delRowBtn = document.createElement('button');
+            delRowBtn.id = 'deleteLastRowBtn';
+            delRowBtn.innerHTML = '<span class="icon">✖</span> Hapus baris';
+            delRowBtn.classList.add('delete-btn');
+            btnGroup.appendChild(delRowBtn);
+
+            delRowBtn.addEventListener('click', function() {
+                captureDataFromTable();
+                if (sheetData.length > 1) {
+                    sheetData.pop(); // hapus baris terakhir
+                } else {
+                    // jika tinggal 1 baris, kosongkan saja jangan sampai 0 baris
+                    if (sheetData.length === 1) {
+                        // kosongkan isi baris tunggal
+                        sheetData[0] = sheetData[0].map(() => '');
+                    }
+                }
+                renderFullTable();
+                saveToLocalStorage();
+            });
+        }
+
+        // sekalian tambah tombol hapus kolom terakhir agar simetris
+        const btnGroup2 = document.querySelector('.btn-group');
+        if (btnGroup2) {
+            const delColBtn = document.createElement('button');
+            delColBtn.id = 'deleteLastColBtn';
+            delColBtn.innerHTML = '<span class="icon">✖</span> Hapus kolom';
+            delColBtn.classList.add('delete-btn');
+            btnGroup2.appendChild(delColBtn);
+
+            delColBtn.addEventListener('click', function() {
+                captureDataFromTable();
+                if (sheetData[0] && sheetData[0].length > 1) {
+                    // hapus kolom terakhir dari setiap baris
+                    for (let r = 0; r < sheetData.length; r++) {
+                        sheetData[r].pop();
+                    }
+                } else {
+                    // jika kolom tinggal 1, kosongkan saja semua sel
+                    if (sheetData[0] && sheetData[0].length === 1) {
+                        for (let r = 0; r < sheetData.length; r++) {
+                            sheetData[r][0] = '';
+                        }
+                    }
+                }
+                renderFullTable();
+                saveToLocalStorage();
+            });
+        }
+
+        // supaya setiap resize / scroll aman
+    })();
+</script>
+</body>
+</html>
