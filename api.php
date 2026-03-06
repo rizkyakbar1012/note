@@ -66,65 +66,6 @@ function saveData($file, $data) {
     return $result !== false;
 }
 
-// Fungsi untuk merge data (gabungkan data dari server dengan data baru)
-function mergeData($serverData, $clientData) {
-    // Jika server kosong, gunakan data client
-    if (empty($serverData)) {
-        return $clientData;
-    }
-    
-    // Jika client kosong, gunakan data server
-    if (empty($clientData)) {
-        return $serverData;
-    }
-    
-    // Merge strategy: ambil yang lebih besar (lebih banyak baris/kolom)
-    // Jika sama besar, prioritaskan data server (yang sudah ada)
-    $serverRows = count($serverData);
-    $clientRows = count($clientData);
-    
-    // Tentukan jumlah kolom maksimal
-    $maxCols = 0;
-    foreach ($serverData as $row) {
-        if (is_array($row) && count($row) > $maxCols) {
-            $maxCols = count($row);
-        }
-    }
-    foreach ($clientData as $row) {
-        if (is_array($row) && count($row) > $maxCols) {
-            $maxCols = count($row);
-        }
-    }
-    
-    // Merge: ambil nilai dari client jika tidak kosong, jika kosong ambil dari server
-    $merged = [];
-    $maxRows = max($serverRows, $clientRows);
-    
-    for ($r = 0; $r < $maxRows; $r++) {
-        $mergedRow = [];
-        $serverRow = isset($serverData[$r]) ? $serverData[$r] : [];
-        $clientRow = isset($clientData[$r]) ? $clientData[$r] : [];
-        
-        for ($c = 0; $c < $maxCols; $c++) {
-            $serverVal = isset($serverRow[$c]) ? trim($serverRow[$c]) : '';
-            $clientVal = isset($clientRow[$c]) ? trim($clientRow[$c]) : '';
-            
-            // Prioritaskan client jika ada isinya, jika kosong ambil dari server
-            if (!empty($clientVal)) {
-                $mergedRow[] = $clientVal;
-            } elseif (!empty($serverVal)) {
-                $mergedRow[] = $serverVal;
-            } else {
-                $mergedRow[] = '';
-            }
-        }
-        
-        $merged[] = $mergedRow;
-    }
-    
-    return $merged;
-}
-
 // Handle request
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -164,21 +105,15 @@ if ($method === 'GET') {
         exit;
     }
     
-    // Load data yang sudah ada di server
-    $fileData = loadData($dataFile);
-    $serverData = $fileData['data'] ?? [];
-    
-    // Merge data (gabungkan dengan data yang sudah ada)
-    $mergedData = mergeData($serverData, $clientData);
-    
-    // Simpan data yang sudah di-merge
-    $saved = saveData($dataFile, $mergedData);
+    // Simpan data langsung dari client (overwrite, tanpa merge)
+    // Data yang dikirim dari client adalah data terbaru yang ingin disimpan
+    $saved = saveData($dataFile, $clientData);
     
     if ($saved) {
         echo json_encode([
             'success' => true,
             'message' => 'Data saved successfully',
-            'data' => $mergedData,
+            'data' => $clientData,
             'last_updated' => date('Y-m-d H:i:s')
         ], JSON_UNESCAPED_UNICODE);
     } else {

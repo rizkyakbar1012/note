@@ -206,8 +206,11 @@
             <button id="resetDefaultBtn">
                 <span class="icon">🔄</span> Reset default
             </button>
+            <button id="saveBtn" class="primary">
+                <span class="icon">💾</span> Save
+            </button>
         </div>
-        <div class="status-badge" id="saveStatus">💾 tersimpan otomatis</div>
+        <div class="status-badge" id="saveStatus">💾 mode manual — klik Save untuk simpan</div>
     </div>
 
     <!-- area spreadsheet -->
@@ -217,7 +220,7 @@
                 <!-- header akan di-render lewat js biar dinamis -->
             </thead>
             <tbody id="tableBody">
-                <!-- isi akan di-render dari data / localStorage -->
+                <!-- isi akan di-render dari data.json via api.php -->
             </tbody>
         </table>
     </div>
@@ -227,12 +230,9 @@
     </div>
 </div>
 
-<script>
+    <script>
     (function() {
-        // --- kunci localStorage (backup)
-        const STORAGE_KEY = 'spreadsheet_notes_data';
-        
-        // --- API endpoint untuk save/load JSON
+        // --- API endpoint untuk save/load JSON (hanya dari server)
         const API_URL = 'api.php';
 
         // --- data default: 4 baris, 5 kolom (A..E) dengan sel kosong
@@ -252,6 +252,7 @@
         const addRowBtn = document.getElementById('addRowBtn');
         const addColBtn = document.getElementById('addColBtn');
         const resetBtn = document.getElementById('resetDefaultBtn');
+        const saveBtn = document.getElementById('saveBtn');
         const saveStatus = document.getElementById('saveStatus');
 
         // ---------- helper: simpan seluruh data ke file JSON via API ----------
@@ -301,15 +302,8 @@
                                 minute: '2-digit',
                                 second: '2-digit'
                             });
-                            saveStatus.innerText = '💾 tersimpan ' + timeStr;
+                            saveStatus.innerText = '💾 tersimpan ke server ' + timeStr;
                             saveStatus.style.opacity = '1';
-                            
-                            // Simpan juga ke localStorage sebagai backup
-                            try {
-                                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
-                            } catch (e) {
-                                console.warn('localStorage backup gagal', e);
-                            }
                         } else {
                             throw new Error(result.message || 'Save failed');
                         }
@@ -318,15 +312,6 @@
                         isSaving = false;
                         console.error('Error saving to server:', error);
                         saveStatus.innerText = '⚠️ gagal menyimpan ke server';
-                        
-                        // Fallback: simpan ke localStorage sebagai backup
-                        try {
-                            localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
-                            saveStatus.innerText = '💾 tersimpan lokal (backup)';
-                        } catch (e) {
-                            console.warn('localStorage juga gagal', e);
-                            saveStatus.innerText = '⚠️ gagal menyimpan';
-                        }
                     });
                 } catch (e) {
                     isSaving = false;
@@ -338,7 +323,7 @@
         
         // ---------- helper: muat data dari server (file JSON) ----------
         function loadFromServer() {
-            saveStatus.innerText = '📥 memuat data...';
+            saveStatus.innerText = '📥 memuat data dari server...';
             
             fetch(API_URL)
                 .then(response => response.json())
@@ -348,45 +333,20 @@
                         sheetData = result.data;
                         renderFullTable();
                         saveStatus.innerText = '✅ data dimuat dari server';
-                        
-                        // Simpan juga ke localStorage sebagai backup
-                        try {
-                            localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
-                        } catch (e) {
-                            console.warn('localStorage backup gagal', e);
-                        }
                     } else {
-                        // Data kosong atau tidak valid, coba load dari localStorage
-                        loadFromLocalStorage();
+                        // Data kosong atau tidak valid, gunakan default
+                        setDefaultData();
+                        renderFullTable();
+                        saveStatus.innerText = '📝 data kosong, menggunakan default';
                     }
                 })
                 .catch(error => {
                     console.warn('Error loading from server:', error);
-                    // Fallback: load dari localStorage
-                    loadFromLocalStorage();
+                    // Jika error, gunakan default
+                    setDefaultData();
+                    renderFullTable();
+                    saveStatus.innerText = '⚠️ gagal memuat dari server, menggunakan default';
                 });
-        }
-        
-        // ---------- helper: muat dari localStorage (backup/offline) ----------
-        function loadFromLocalStorage() {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                try {
-                    const parsed = JSON.parse(stored);
-                    if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
-                        sheetData = parsed;
-                        renderFullTable();
-                        saveStatus.innerText = '💾 data';
-                        return;
-                    }
-                } catch (e) {
-                    console.warn('Error parsing localStorage:', e);
-                }
-            }
-            // Jika tidak ada data, gunakan default
-            setDefaultData();
-            renderFullTable();
-            saveStatus.innerText = '📝 menggunakan data default';
         }
 
         // ---------- baca semua nilai dari tabel ke sheetData (sinkronisasi) ----------
@@ -456,9 +416,9 @@
             sheetData = defaultData;
         }
 
-        // ---------- muat data (prioritas: server, fallback: localStorage, akhirnya: default) ----------
+        // ---------- muat data dari server (data.json via api.php) ----------
         function loadFromStorage() {
-            // Coba load dari server dulu
+            // Load dari server (data.json via api.php)
             loadFromServer();
         }
 
@@ -474,7 +434,7 @@
                 sheetData.push(newRow);
             }
             renderFullTable();
-            saveToServer(); // langsung simpan ke server
+            // penyimpanan dilakukan manual lewat tombol Save
         }
 
         // ---------- tambah kolom baru (setiap baris ditambah satu sel kosong di akhir) ----------
@@ -488,7 +448,7 @@
                 }
             }
             renderFullTable();
-            saveToServer();
+            // penyimpanan dilakukan manual lewat tombol Save
         }
 
         // ---------- reset ke default 4x5 ----------
@@ -496,45 +456,22 @@
             if (confirm('Yakin ingin reset ke data default? Data yang sudah ada akan diganti.')) {
                 setDefaultData();
                 renderFullTable();
-                saveToServer();
+                // penyimpanan dilakukan manual lewat tombol Save
             }
         }
 
-        // ---------- setup event listeners: delegation untuk contenteditable + menyimpan otomatis ----------
+        // ---------- setup event listeners ----------
         function attachEvents() {
-            // delegasi input di dalam tableBody (contenteditable)
-            tableBody.addEventListener('input', function(e) {
-                const target = e.target;
-                if (target.classList.contains('cell-input')) {
-                    // saat user mengetik, simpan ke server (dengan debounce otomatis di saveToServer)
-                    saveToServer();
-                }
-            });
-
-            // blur juga bisa jadi cadangan, tapi input sudah cukup.
-            // tambahan: untuk paste atau drop, tetap tersimpan via input.
-
             // tombol
             addRowBtn.addEventListener('click', addRow);
             addColBtn.addEventListener('click', addColumn);
             resetBtn.addEventListener('click', resetDefault);
+            if (saveBtn) {
+                saveBtn.addEventListener('click', saveToServer);
+            }
 
-            // opsional: hapus baris? biar simpel tidak, tapi bisa pakai klik kanan? tidak dulu.
-            // tambahan: supaya lebih aman, handle sebelum unload (jika ada perubahan terakhir)
-            window.addEventListener('beforeunload', function() {
-                captureDataFromTable();
-                // Simpan ke localStorage sebagai backup terakhir
-                try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
-                } catch (e) {
-                    console.warn('localStorage backup gagal saat unload', e);
-                }
-                // Juga coba simpan ke server (synchronous jika memungkinkan)
-                if (!isSaving) {
-                    const blob = new Blob([JSON.stringify({data: sheetData})], {type: 'application/json'});
-                    navigator.sendBeacon(API_URL, blob);
-                }
-            });
+            // Catatan: Data hanya disimpan ke server via tombol Save
+            // Tidak ada auto-save atau backup ke localStorage
         }
 
         // ---------- inisialisasi ----------
@@ -542,7 +479,7 @@
             loadFromStorage();
             attachEvents();
             // simpan status awal
-            saveStatus.innerText = '💾 siap · tersimpan';
+            saveStatus.innerText = '💾 mode manual — data belum disimpan';
         }
 
         init();
