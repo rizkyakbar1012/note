@@ -229,16 +229,27 @@
        
     </div>
 </div>
-
+    <!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script>
+
     (function() {
        
-        const REMOTE_API_URL = 'https://xyz.ngrok.io/api.php';
-        const API_URL = (
-            location.hostname === 'rizkyakbar1012.github.io'
-        )
-            ? REMOTE_API_URL 
-            : 'api.php';        
+       // Konfigurasi Firebase (ganti dengan punyamu)
+        const firebaseConfig = {
+        apiKey: "xxx",
+        authDomain: "xxx",
+        databaseURL: "https://note-spreadsheets-default-rtdb.firebaseio.com/",
+        projectId: "xxx",
+        storageBucket: "xxx",
+        messagingSenderId: "xxx",
+        appId: "xxx"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const dataRef = db.ref('spreadsheet');  // path penyimpanan
+
 
         // --- data default: 4 baris, 5 kolom (A..E) dengan sel kosong
         const DEFAULT_ROWS = 4;
@@ -247,10 +258,6 @@
         // inisialisasi data (array 2D)
         let sheetData = [];
         
-        // Flag untuk mencegah multiple simultaneous saves
-        let isSaving = false;
-        let saveTimeout = null;
-
         // referensi elemen
         const tableBody = document.getElementById('tableBody');
         const tableHeader = document.getElementById('tableHeader');
@@ -260,99 +267,37 @@
         const saveBtn = document.getElementById('saveBtn');
         const saveStatus = document.getElementById('saveStatus');
 
-        // ---------- helper: simpan seluruh data ke file JSON via API ----------
-        function saveToServer() {
-            // Debounce: tunggu 500ms sebelum save untuk menghindari terlalu banyak request
-            if (saveTimeout) {
-                clearTimeout(saveTimeout);
+        // ---------- helper: simpan seluruh data ke Firebase Realtime Database ----------
+        function saveToFirebase() {
+            captureDataFromTable();
+            saveStatus.innerText = '💾 menyimpan...';
+            dataRef.set(sheetData).then(() => {
+                const timeStr = new Date().toLocaleTimeString();
+                saveStatus.innerText = '💾 tersimpan ke Firebase ' + timeStr;
+            }).catch(err => {
+                console.error(err);
+                saveStatus.innerText = '⚠️ gagal menyimpan';
+            });
             }
-            
-            saveTimeout = setTimeout(function() {
-                if (isSaving) return; // Skip jika sedang proses save
-                
-                try {
-                    // baca data terbaru dari tabel (sinkronisasi kalau ada perubahan manual via contenteditable)
-                    captureDataFromTable();
-                    
-                    // Update status: sedang menyimpan
-                    saveStatus.innerText = '💾 menyimpan...';
-                    saveStatus.style.opacity = '1';
-                    isSaving = true;
-                    
-                    // Kirim data ke server via AJAX
-                    fetch(API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            data: sheetData
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(result => {
-                        isSaving = false;
-                        
-                        if (result.success) {
-                            // Update data dengan hasil merge dari server
-                            if (result.data && Array.isArray(result.data)) {
-                                sheetData = result.data;
-                                // Re-render jika ada perubahan dari merge
-                                renderFullTable();
-                            }
-                            
-                            // Feedback status sukses
-                            const timeStr = new Date().toLocaleTimeString('id-ID', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit'
-                            });
-                            saveStatus.innerText = '💾 tersimpan ke server ' + timeStr;
-                            saveStatus.style.opacity = '1';
-                        } else {
-                            throw new Error(result.message || 'Save failed');
-                        }
-                    })
-                    .catch(error => {
-                        isSaving = false;
-                        console.error('Error saving to server:', error);
-                        saveStatus.innerText = '⚠️ gagal menyimpan ke server';
-                    });
-                } catch (e) {
-                    isSaving = false;
-                    console.warn('gagal simpan', e);
-                    saveStatus.innerText = '⚠️ gagal menyimpan';
-                }
-            }, 500); // Debounce 500ms
-        }
         
-        // ---------- helper: muat data dari server (file JSON) ----------
-        function loadFromServer() {
-            saveStatus.innerText = '📥 memuat data dari server...';
-            
-            fetch(API_URL)
-                .then(response => response.json())
-                .then(result => {
-                    if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
-                        // Data dari server ada dan valid
-                        sheetData = result.data;
-                        renderFullTable();
-                        saveStatus.innerText = '✅ data dimuat dari server';
-                    } else {
-                        // Data kosong atau tidak valid, gunakan default
-                        setDefaultData();
-                        renderFullTable();
-                        saveStatus.innerText = '📝 data kosong, menggunakan default';
-                    }
-                })
-                .catch(error => {
-                    console.warn('Error loading from server:', error);
-                    // Jika error, gunakan default
-                    setDefaultData();
-                    renderFullTable();
-                    saveStatus.innerText = '⚠️ gagal memuat dari server, menggunakan default';
-                });
-        }
+        // ---------- helper: muat data awal dari Firebase ----------
+        function loadFromFirebase() {
+            dataRef.once('value').then(snapshot => {
+                const val = snapshot.val();
+                if (val && Array.isArray(val) && val.length > 0) {
+                sheetData = val;
+                } else {
+                setDefaultData();
+                }
+                renderFullTable();
+                saveStatus.innerText = '✅ data berhasil dimuat';
+            }).catch(err => {
+                console.warn(err);
+                setDefaultData();
+                renderFullTable();
+                saveStatus.innerText = '⚠️ gagal memuat, silahkan refresh halaman';
+            });
+            }
 
         // ---------- baca semua nilai dari tabel ke sheetData (sinkronisasi) ----------
         function captureDataFromTable() {
@@ -421,12 +366,6 @@
             sheetData = defaultData;
         }
 
-        // ---------- muat data dari server (data.json via api.php) ----------
-        function loadFromStorage() {
-            // Load dari server (data.json via api.php)
-            loadFromServer();
-        }
-
         // ---------- tambah baris baru (diisi kosong) ----------
         function addRow() {
             captureDataFromTable(); // ambil data terbaru dari tabel
@@ -472,7 +411,7 @@
             addColBtn.addEventListener('click', addColumn);
             resetBtn.addEventListener('click', resetDefault);
             if (saveBtn) {
-                saveBtn.addEventListener('click', saveToServer);
+                saveBtn.addEventListener('click', saveToFirebase);
             }
 
             // Catatan: Data hanya disimpan ke server via tombol Save
@@ -481,7 +420,7 @@
 
         // ---------- inisialisasi ----------
         function init() {
-            loadFromStorage();
+            loadFromFirebase();
             attachEvents();
             // simpan status awal
             saveStatus.innerText = '💾 mode manual — data belum disimpan';
