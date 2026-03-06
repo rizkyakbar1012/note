@@ -232,15 +232,13 @@
 
     <script>
     (function() {
-        // --- API endpoint untuk save/load JSON (backend PHP)
-        // Catatan penting:
-        // - Saat jalan di localhost (Laragon), akan pakai 'api.php' (file ini)
-        // - Saat jalan di GitHub Pages (hostname berakhiran github.io),
-        //   WAJIB ganti REMOTE_API_URL ke hosting PHP yang menjalankan api.php
-        const REMOTE_API_URL = 'https://contoh-domain-php-anda.com/note/api.php'; // TODO: ganti dengan URL backend PHP Anda
-        const API_URL = (location.hostname.endsWith('github.io'))
-            ? REMOTE_API_URL   // di GitHub Pages => pakai backend PHP remote
-            : 'api.php';        // di localhost / server PHP langsung
+       
+        const REMOTE_API_URL = 'https://rizkyakbar1012.github.io/note/api.php';
+        const API_URL = (
+            location.hostname === 'rizkyakbar1012.github.io'
+        )
+            ? REMOTE_API_URL 
+            : 'api.php';        
 
         // --- data default: 4 baris, 5 kolom (A..E) dengan sel kosong
         const DEFAULT_ROWS = 4;
