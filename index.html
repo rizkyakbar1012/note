@@ -194,10 +194,6 @@
 </head>
 <body>
 <div class="spreadsheet-card">
-    <h1>
-        📒 SheetNote
-        <span>auto-save · localStorage</span>
-    </h1>
 
     <div class="toolbar">
         <div class="btn-group">
@@ -227,15 +223,17 @@
     </div>
 
     <div class="footer-notes">
-        <small>⏎ setiap perubahan langsung simpan</small>
-        <small>📅 online / offline — tersimpan di browsermu</small>
+       
     </div>
 </div>
 
 <script>
     (function() {
-        // --- kunci localStorage
+        // --- kunci localStorage (backup)
         const STORAGE_KEY = 'spreadsheet_notes_data';
+        
+        // --- API endpoint untuk save/load JSON
+        const API_URL = 'api.php';
 
         // --- data default: 4 baris, 5 kolom (A..E) dengan sel kosong
         const DEFAULT_ROWS = 4;
@@ -243,6 +241,10 @@
 
         // inisialisasi data (array 2D)
         let sheetData = [];
+        
+        // Flag untuk mencegah multiple simultaneous saves
+        let isSaving = false;
+        let saveTimeout = null;
 
         // referensi elemen
         const tableBody = document.getElementById('tableBody');
@@ -252,23 +254,139 @@
         const resetBtn = document.getElementById('resetDefaultBtn');
         const saveStatus = document.getElementById('saveStatus');
 
-        // ---------- helper: simpan seluruh data ke localStorage ----------
-        function saveToLocalStorage() {
-            try {
-                // baca data terbaru dari tabel (sinkronisasi kalau ada perubahan manual via contenteditable)
-                captureDataFromTable();
-                // simpan sheetData
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
-                // feedback status
-                saveStatus.innerText = '💾 tersimpan ' + new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-                saveStatus.style.opacity = '1';
-                setTimeout(() => {
-                    saveStatus.style.transition = 'opacity 0.5s';
-                }, 800);
-            } catch (e) {
-                console.warn('gagal simpan', e);
-                saveStatus.innerText = '⚠️ gagal menyimpan';
+        // ---------- helper: simpan seluruh data ke file JSON via API ----------
+        function saveToServer() {
+            // Debounce: tunggu 500ms sebelum save untuk menghindari terlalu banyak request
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
             }
+            
+            saveTimeout = setTimeout(function() {
+                if (isSaving) return; // Skip jika sedang proses save
+                
+                try {
+                    // baca data terbaru dari tabel (sinkronisasi kalau ada perubahan manual via contenteditable)
+                    captureDataFromTable();
+                    
+                    // Update status: sedang menyimpan
+                    saveStatus.innerText = '💾 menyimpan...';
+                    saveStatus.style.opacity = '1';
+                    isSaving = true;
+                    
+                    // Kirim data ke server via AJAX
+                    fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            data: sheetData
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        isSaving = false;
+                        
+                        if (result.success) {
+                            // Update data dengan hasil merge dari server
+                            if (result.data && Array.isArray(result.data)) {
+                                sheetData = result.data;
+                                // Re-render jika ada perubahan dari merge
+                                renderFullTable();
+                            }
+                            
+                            // Feedback status sukses
+                            const timeStr = new Date().toLocaleTimeString('id-ID', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                            });
+                            saveStatus.innerText = '💾 tersimpan ' + timeStr;
+                            saveStatus.style.opacity = '1';
+                            
+                            // Simpan juga ke localStorage sebagai backup
+                            try {
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                            } catch (e) {
+                                console.warn('localStorage backup gagal', e);
+                            }
+                        } else {
+                            throw new Error(result.message || 'Save failed');
+                        }
+                    })
+                    .catch(error => {
+                        isSaving = false;
+                        console.error('Error saving to server:', error);
+                        saveStatus.innerText = '⚠️ gagal menyimpan ke server';
+                        
+                        // Fallback: simpan ke localStorage sebagai backup
+                        try {
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                            saveStatus.innerText = '💾 tersimpan lokal (backup)';
+                        } catch (e) {
+                            console.warn('localStorage juga gagal', e);
+                            saveStatus.innerText = '⚠️ gagal menyimpan';
+                        }
+                    });
+                } catch (e) {
+                    isSaving = false;
+                    console.warn('gagal simpan', e);
+                    saveStatus.innerText = '⚠️ gagal menyimpan';
+                }
+            }, 500); // Debounce 500ms
+        }
+        
+        // ---------- helper: muat data dari server (file JSON) ----------
+        function loadFromServer() {
+            saveStatus.innerText = '📥 memuat data...';
+            
+            fetch(API_URL)
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
+                        // Data dari server ada dan valid
+                        sheetData = result.data;
+                        renderFullTable();
+                        saveStatus.innerText = '✅ data dimuat dari server';
+                        
+                        // Simpan juga ke localStorage sebagai backup
+                        try {
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                        } catch (e) {
+                            console.warn('localStorage backup gagal', e);
+                        }
+                    } else {
+                        // Data kosong atau tidak valid, coba load dari localStorage
+                        loadFromLocalStorage();
+                    }
+                })
+                .catch(error => {
+                    console.warn('Error loading from server:', error);
+                    // Fallback: load dari localStorage
+                    loadFromLocalStorage();
+                });
+        }
+        
+        // ---------- helper: muat dari localStorage (backup/offline) ----------
+        function loadFromLocalStorage() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
+                        sheetData = parsed;
+                        renderFullTable();
+                        saveStatus.innerText = '💾 data';
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Error parsing localStorage:', e);
+                }
+            }
+            // Jika tidak ada data, gunakan default
+            setDefaultData();
+            renderFullTable();
+            saveStatus.innerText = '📝 menggunakan data default';
         }
 
         // ---------- baca semua nilai dari tabel ke sheetData (sinkronisasi) ----------
@@ -338,25 +456,10 @@
             sheetData = defaultData;
         }
 
-        // ---------- muat dari localStorage atau pakai default ----------
+        // ---------- muat data (prioritas: server, fallback: localStorage, akhirnya: default) ----------
         function loadFromStorage() {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                try {
-                    const parsed = JSON.parse(stored);
-                    if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
-                        sheetData = parsed;
-                    } else {
-                        setDefaultData();
-                    }
-                } catch (e) {
-                    setDefaultData();
-                }
-            } else {
-                setDefaultData();
-            }
-            // render
-            renderFullTable();
+            // Coba load dari server dulu
+            loadFromServer();
         }
 
         // ---------- tambah baris baru (diisi kosong) ----------
@@ -371,7 +474,7 @@
                 sheetData.push(newRow);
             }
             renderFullTable();
-            saveToLocalStorage(); // langsung simpan
+            saveToServer(); // langsung simpan ke server
         }
 
         // ---------- tambah kolom baru (setiap baris ditambah satu sel kosong di akhir) ----------
@@ -385,14 +488,16 @@
                 }
             }
             renderFullTable();
-            saveToLocalStorage();
+            saveToServer();
         }
 
         // ---------- reset ke default 4x5 ----------
         function resetDefault() {
-            setDefaultData();
-            renderFullTable();
-            saveToLocalStorage();
+            if (confirm('Yakin ingin reset ke data default? Data yang sudah ada akan diganti.')) {
+                setDefaultData();
+                renderFullTable();
+                saveToServer();
+            }
         }
 
         // ---------- setup event listeners: delegation untuk contenteditable + menyimpan otomatis ----------
@@ -401,10 +506,8 @@
             tableBody.addEventListener('input', function(e) {
                 const target = e.target;
                 if (target.classList.contains('cell-input')) {
-                    // saat user mengetik, kita bisa langsung simpan.
-                    // tapi kita tidak perlu capture baris per baris, pakai saveToLocalStorage yang akan capture semua.
-                    // untuk menghindari terlalu banyak simpan, bisa di-debounce, tapi ini sederhana langsung simpan.
-                    saveToLocalStorage();
+                    // saat user mengetik, simpan ke server (dengan debounce otomatis di saveToServer)
+                    saveToServer();
                 }
             });
 
@@ -420,7 +523,17 @@
             // tambahan: supaya lebih aman, handle sebelum unload (jika ada perubahan terakhir)
             window.addEventListener('beforeunload', function() {
                 captureDataFromTable();
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                // Simpan ke localStorage sebagai backup terakhir
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(sheetData));
+                } catch (e) {
+                    console.warn('localStorage backup gagal saat unload', e);
+                }
+                // Juga coba simpan ke server (synchronous jika memungkinkan)
+                if (!isSaving) {
+                    const blob = new Blob([JSON.stringify({data: sheetData})], {type: 'application/json'});
+                    navigator.sendBeacon(API_URL, blob);
+                }
             });
         }
 
@@ -470,7 +583,7 @@
                     }
                 }
                 renderFullTable();
-                saveToLocalStorage();
+                saveToServer();
             });
         }
 
@@ -499,7 +612,7 @@
                     }
                 }
                 renderFullTable();
-                saveToLocalStorage();
+                saveToServer();
             });
         }
 
